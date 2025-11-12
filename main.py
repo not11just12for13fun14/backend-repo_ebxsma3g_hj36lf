@@ -66,66 +66,96 @@ def extract_tags(situation: str) -> List[str]:
     return tags
 
 
+def key_phrases(situation: str) -> List[str]:
+    s = situation.strip()
+    # naive phrase extraction: split by punctuation, pick meaningful chunks
+    parts = []
+    for chunk in s.replace("?", ".").replace("!", ".").split("."):
+        c = chunk.strip()
+        if 4 <= len(c) <= 140:
+            parts.append(c)
+    if not parts and s:
+        parts = [s]
+    return parts[:4]
+
+
+def sentiment_hint(situation: str) -> str:
+    s = situation.lower()
+    positive = any(w in s for w in ["excited", "happy", "love", "great", "amazing", "dream"])
+    negative = any(w in s for w in ["scared", "anxious", "worried", "stress", "burnout", "bad", "risky"])
+    if positive and not negative:
+        return "leans positive"
+    if negative and not positive:
+        return "leans cautious"
+    return "mixed"
+
+
 def generate_debate(situation: str):
     s = situation.strip()
     tags = extract_tags(s)
+    phrases = key_phrases(s)
+    tone = sentiment_hint(s)
 
-    def emo_open():
-        return (
-            "I feel the weight of this. Your well-being and how this choice impacts your day-to-day truly matters. "
-            "Let's honor your feelings first."
+    # Openers tailored by tone
+    emo_open = (
+        f"I can feel how this {tone} decision sits with you. Let's honor what your day-to-day will feel like, not just the headline outcome."
+    )
+    logic_open = (
+        "Let's turn this into a clear decision model: objectives, constraints, options, and reversible next actions."
+    )
+
+    # Dynamic points using extracted phrases
+    emo_points: List[str] = []
+    log_points: List[str] = []
+
+    for p in phrases:
+        emo_points.append(
+            f"When you picture '{p}', what emotion shows up first—ease, excitement, or tension? Follow the one that sustains your energy."
+        )
+        log_points.append(
+            f"For '{p}', list two options. Score each 1–5 on impact, effort, risk, and reversibility. Prefer the higher expected value with low irreversible risk."
         )
 
-    def logic_open():
-        return (
-            "Let's structure this. We'll list objectives, constraints, and potential outcomes, then score options rationally."
-        )
+    # Generic scaffolding
+    emo_points.append("Protect sleep, relationships, and identity—these are compounding assets.")
+    log_points.append("Design a 7–14 day reversible test to gather evidence before a full commit.")
 
-    def emotional_points():
-        pts = []
-        pts.append("What outcome brings you a sense of peace and excitement when you imagine waking up tomorrow?")
-        pts.append("Consider your energy: which option avoids burnout and supports your mental health?")
-        pts.append("Your relationships and identity matter—will this choice align with your values and community?")
-        return pts
+    # Self-reflection rounds (each side critiques itself once)
+    emo_self = (
+        "I might be romanticizing the ideal day. Let's ground this by noting one concrete discomfort you're willing to accept."
+    )
+    log_self = (
+        "I might be over-optimizing metrics. Let's not ignore motivation and meaning—the plan must be energizing to be sustainable."
+    )
 
-    def logical_points():
-        pts = []
-        pts.append("Map pros and cons with time horizons: immediate, 6 months, 2 years.")
-        pts.append("Estimate risk vs. reward. Minimize irreversible downside, capture asymmetric upside.")
-        pts.append("Define a small reversible experiment to test before fully committing.")
-        return pts
-
-    messages = []
+    messages: List[dict] = []
     turn = 1
     messages.append({"role": "user", "content": s, "turn": 0})
-    messages.append({"role": "emotional", "content": emo_open(), "turn": turn}); turn += 1
-    messages.append({"role": "logical", "content": logic_open(), "turn": turn}); turn += 1
+    messages.append({"role": "emotional", "content": emo_open, "turn": turn}); turn += 1
+    messages.append({"role": "logical", "content": logic_open, "turn": turn}); turn += 1
 
-    for ep, lp in zip(emotional_points(), logical_points()):
+    for ep, lp in zip(emo_points, log_points):
         messages.append({"role": "emotional", "content": ep, "turn": turn}); turn += 1
         messages.append({"role": "logical", "content": lp, "turn": turn}); turn += 1
 
-    # Balanced summary decision
-    summary = []
-    summary.append("Synthesis: blend care with clarity.")
-    summary.append(
-        "From the emotional lens: prioritize well-being, values, and sustainable motivation."
-    )
-    summary.append(
-        "From the logical lens: choose the option with favorable expected value and low irreversible risk."
-    )
-    # actionable next step tailored by tags
-    action = "Next step: run a 7-day experiment to gather signal and reduce uncertainty."
-    if "finance" in tags:
-        action = "Next step: set a 30-60-90 day budget and a small-cap downside cap; run a reversible trial."
-    if "career" in tags:
-        action = "Next step: set 3 success metrics (learning, compensation, impact) and do a 2-week shadow/test project."
-    if "relationships" in tags:
-        action = "Next step: schedule an open conversation, agree on needs and boundaries, and reassess in 2 weeks."
-    if "health" in tags:
-        action = "Next step: adopt a minimal viable routine (sleep, meals, 20-min walk) and review mood/energy after 10 days."
+    messages.append({"role": "emotional", "content": emo_self, "turn": turn}); turn += 1
+    messages.append({"role": "logical", "content": log_self, "turn": turn}); turn += 1
 
-    final_decision = "Balanced Decision: choose the path that preserves mental health and aligns with values while maximizing reversible upside. " + action
+    # Action tailored by tags
+    action = "Run a small, time-boxed experiment and measure real signals."
+    if "finance" in tags:
+        action = "Create a 30–60–90 budget, cap downside, and trial the change with strict guardrails."
+    if "career" in tags:
+        action = "Define three success metrics (learning, compensation, impact) and do a 2-week shadow or pilot."
+    if "relationships" in tags:
+        action = "Schedule a candid conversation, co-create boundaries, and review in 2 weeks."
+    if "health" in tags:
+        action = "Adopt a minimal routine (sleep, meals, 20‑min walk) and review mood and energy after 10 days."
+
+    final_decision = (
+        "Balanced Decision: choose the path that preserves mental health and values while maximizing reversible upside. "
+        + action
+    )
     messages.append({"role": "summary", "content": final_decision, "turn": turn}); turn += 1
 
     return messages, final_decision, tags
